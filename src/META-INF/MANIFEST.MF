@@ -1,0 +1,7 @@
+Manifest-Version: 1.0
+Main-Class: 
+Class-Path: spring-web-4.3.9.RELEASE.jar tomcat-embed-core-8.5.15.jar sp
+ ring-boot-1.4.7.RELEASE.jar spring-core-4.3.9.RELEASE.jar spring-beans-
+ 4.3.9.RELEASE.jar spring-webmvc-4.3.9.RELEASE.jar spring-context-4.3.9.
+ RELEASE.jar
+

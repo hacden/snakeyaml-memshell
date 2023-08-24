@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="yaml-payload">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/yaml-payload.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

